@@ -10,11 +10,9 @@ Screenshots folder or the clipboard) are pegged onto the line.
   Click          copy image to clipboard (ripple + "Copied!")
   Double-click   open in the default photo viewer
   Drag           drop into Slack, Discord, browsers, Explorer ...
-  Keep           take it off the line; the file stays in Screenshots
-  Delete / X     move the file to the Recycle Bin (restorable)
-  Right-click    menu (copy / open / show in folder / recycle / keep)
+  Hover -> X     let it go (fade out; the file on disk is never deleted)
+  Right-click    menu (copy / open / show in folder / remove)
   Ctrl+Alt+T or Win+Shift+Y   show / hide the line
-  Tray menu      start with Windows, auto-dismiss time, ask before deleting
 """
 import sys, os, time, json, random, queue, hashlib, threading, subprocess, tempfile, ctypes
 from datetime import datetime
@@ -111,43 +109,6 @@ def move_to_recycle_bin(path):
             and not op.fAnyOperationsAborted
     except Exception:
         return False
- 
- 
-RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
- 
- 
-def startup_command():
-    """Command Windows runs at login: Python (or the .exe) directly, so there is no security prompt."""
-    if getattr(sys, "frozen", False):
-        return '"%s"' % sys.executable
-    exe = sys.executable
-    if exe.lower().endswith("python.exe"):
-        exe = exe[:-len("python.exe")] + "pythonw.exe"      # no console window
-    return '"%s" "%s"' % (exe, os.path.abspath(__file__))
- 
- 
-def startup_enabled():
-    if not IS_WIN:
-        return False
-    import winreg
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
-            winreg.QueryValueEx(k, "Clothesline")
-        return True
-    except OSError:
-        return False
- 
- 
-def set_startup(on):
-    import winreg
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
-        if on:
-            winreg.SetValueEx(k, "Clothesline", 0, winreg.REG_SZ, startup_command())
-        else:
-            try:
-                winreg.DeleteValue(k, "Clothesline")
-            except FileNotFoundError:
-                pass
  
  
 def make_icon():
@@ -842,7 +803,7 @@ class ClotheslineApp(QObject):
     def _setup_tray(self, labels):
         self.tray = QSystemTrayIcon(make_icon(), self)
         hk = " / ".join(labels) if labels else "tray icon"
-        self.tray.setToolTip(f"Clothesline v1.4 - toggle with {hk}")
+        self.tray.setToolTip(f"Clothesline v1.3 - toggle with {hk}")
         m = QMenu()
         m.addAction(f"Show / hide the line ({hk})").triggered.connect(self.shelf.toggle)
         a = m.addAction("Reveal when mouse hits the top edge")
@@ -859,14 +820,6 @@ class ClotheslineApp(QObject):
             act.setCheckable(True); act.setActionGroup(grp)
             act.setChecked(secs == self.auto_keep_secs)
             act.triggered.connect(lambda _=False, v=secs: setattr(self, "auto_keep_secs", v))
-        if IS_WIN:
-            st = m.addAction("Start with Windows")
-            st.setCheckable(True)
-            st.setChecked(startup_enabled())
-            st.toggled.connect(self._toggle_startup)
-            if st.isChecked():
-                try: set_startup(True)                 # refresh the path in case the folder moved
-                except OSError: pass
         m.addSeparator()
         m.addAction("Clear the line").triggered.connect(self.shelf.clear_all)
         m.addAction("Open screenshots folder").triggered.connect(lambda: self.open_image(self.dirs[0]))
@@ -984,13 +937,6 @@ class ClotheslineApp(QObject):
                 QGuiApplication.clipboard().setImage(img)
         QTimer.singleShot(0, do)
  
-    def _toggle_startup(self, on):
-        try:
-            set_startup(on)
-        except OSError:
-            self.tray.showMessage("Clothesline", "Couldn't change the startup setting.",
-                                  QSystemTrayIcon.Warning, 3000)
- 
     def request_delete(self, card):
         if self.confirm_delete:
             card.ask_confirm()
@@ -1078,3 +1024,4 @@ def main():
  
 if __name__ == "__main__":
     main()
+ 
